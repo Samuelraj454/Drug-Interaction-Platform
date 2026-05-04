@@ -83,7 +83,7 @@ export default function DrugSearchInput({ value, onChange, placeholder, disabled
   };
 
   return (
-    <div className="relative w-full" ref={containerRef} onKeyDown={handleKeyDown}>
+    <div className={`relative w-full ${showSuggestions ? 'z-50' : 'z-10'}`} ref={containerRef} onKeyDown={handleKeyDown}>
       <div className="space-y-3">
         <label className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.3em] flex items-center gap-2">
           {Icon && <Icon size={12} className="text-blue-500"/>} Drug Selection
@@ -112,7 +112,7 @@ export default function DrugSearchInput({ value, onChange, placeholder, disabled
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
-            className="absolute z-[100] w-full mt-2 glass-panel border border-white/10 overflow-hidden shadow-2xl overflow-y-auto max-h-[400px] custom-scrollbar"
+            className="absolute z-[1000] w-full mt-2 glass-panel border border-white/10 overflow-hidden shadow-2xl overflow-y-auto max-h-[400px] custom-scrollbar"
           >
             {suggestions.length > 0 ? (
               <div className="flex flex-col">

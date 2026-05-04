@@ -286,12 +286,12 @@ export default function App() {
                 className="max-w-[1600px] mx-auto h-full flex flex-col gap-8"
               >
                  {/* Top Search Area */}
-                 <div className="glass-panel p-8 relative group">
+                 <div className="glass-panel p-8 relative group z-[60]">
                     <div className={`scanning-overlay ${loading ? 'active' : ''}`}>
                       <div className="scan-line" />
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end relative z-10">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end relative">
                       <div className="md:col-span-4">
                          <DrugSearchInput value={drugA} onChange={setDrugA} placeholder="Input Agent 1..." disabled={loading} icon={FlaskConical} />
                       </div>
@@ -378,7 +378,14 @@ export default function App() {
                           )}
                        </div>
 
-                       <div className="glass-panel p-8 h-48 overflow-y-auto custom-scrollbar">
+                        {errorMsg && (
+                           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl mb-6 flex items-center gap-3">
+                              <AlertTriangle className="text-red-500" size={16}/>
+                              <p className="text-[10px] font-bold text-red-400 uppercase tracking-widest">{errorMsg}</p>
+                           </motion.div>
+                        )}
+
+                        <div className="glass-panel p-8 h-48 overflow-y-auto custom-scrollbar">
                           <p className="text-[9px] font-black text-zinc-600 uppercase tracking-[0.4em] mb-4 flex items-center gap-2">
                              <Cpu size={12}/> Neural Reasoning Output
                           </p>
@@ -518,7 +525,7 @@ export default function App() {
                     {/* Grafana Dashboard Iframe */}
                     <div className="flex-grow p-1">
                       <iframe 
-                        src="http://localhost:3001/d/system-health/system-health?orgId=1&refresh=5s&theme=dark&kiosk" 
+                        src="http://localhost:3001/d/system-health/system-health?orgId=1&refresh=5s&theme=dark&kiosk&from=now-15m&to=now" 
                         className="w-full h-full border-none rounded-xl grayscale-[0.2] opacity-90 hover:grayscale-0 transition-all"
                         title="Grafana Analytics"
                       />

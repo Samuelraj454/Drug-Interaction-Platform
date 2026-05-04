@@ -14,12 +14,35 @@ import logging
 import time
 from datetime import datetime
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from prometheus_client import Histogram, Counter, generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+
+# --- Prometheus Metrics ---
+GENAI_EXPLAIN_LATENCY = Histogram(
+    "genai_explanation_latency_sec",
+    "Time spent generating interaction explanations",
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
+)
+RAG_RETRIEVAL_LATENCY = Histogram(
+    "genai_rag_retrieval_sec",
+    "Time spent in RAG context retrieval",
+    buckets=[0.01, 0.05, 0.1, 0.5, 1.0]
+)
+GENAI_REQUEST_COUNT = Counter(
+    "genai_requests_total",
+    "Total number of GenAI explanation requests",
+    ["provider", "status"]
+)
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 # RAG Init (Lazy)
 rag = None
@@ -31,8 +54,16 @@ client_openai = AsyncOpenAI(api_key=openai_api_key) if openai_api_key else None
 gemini_api_key = os.getenv("GOOGLE_API_KEY")
 if gemini_api_key:
     genai.configure(api_key=gemini_api_key)
-    # Using 'gemini-pro' for robust backwards compatibility
-    model_gemini = genai.GenerativeModel('gemini-pro')
+    # Using gemini-1.5-flash for better performance and speed
+    model_gemini = genai.GenerativeModel(
+        model_name='gemini-1.5-flash',
+        safety_settings=[
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        ]
+    )
 else:
     model_gemini = None
 
@@ -169,52 +200,55 @@ async def stream_explanation(request: ExplainRequest):
 
     # RAG Context Retrieval & Live Data
     rag_start = time.time()
-    try:
-        contexts = rag.get_relevant_context(drug_a, drug_b, top_k=5) if rag else []
-        
-        # Secondary Identity Filtering for absolute accuracy
-        da, db = drug_a.lower(), drug_b.lower()
-        is_same_drug = (da == db)
-        
-        verified_contexts = []
-        for c in contexts:
-            ctx_text = c['context'].lower()
-            # Strict logic: context must mention both drugs if they are different
-            if not is_same_drug:
-                if da in ctx_text and db in ctx_text:
-                    verified_contexts.append(c)
-            else:
-                # If same drug, ensure it's specifically about that drug and not just a random mention
-                # e.g. "Cocaine overdose" or "Cocaine toxicity"
-                if da in ctx_text and any(k in ctx_text for k in ["overdose", "toxicity", "lethal", "dosage", "repeated"]):
-                    verified_contexts.append(c)
-        
-        # Async fetch live data simultaneously
-        live_data_str = await fetch_live_fda_data(drug_a, drug_b)
-        
-        if len(verified_contexts) == 0:
-            if is_same_drug:
-                context_str = f"Clinical warning: Duplicate administration of {drug_a.upper()} detected. High risk of acute toxicity and pharmacological overdose."
-            else:
-                context_str = "No specific known interactions found in the medical database for this pair."
-        else:
-            # Format and summarize context
-            context_str = ""
-            for c in verified_contexts:
-                # Extract the core interaction message, stripping out internal markers
-                txt = c['context']
-                if "Interaction:" in txt:
-                    # Clean the context: Only keep the interaction description, discard the drug headers
-                    txt = txt.split("Interaction:", 1)[1].strip()
-                context_str += f"- {txt}\n"
+    with RAG_RETRIEVAL_LATENCY.time():
+        try:
+            contexts = rag.get_relevant_context(drug_a, drug_b, top_k=5) if rag else []
             
-        if live_data_str:
-            context_str += f"\n\nREAL-WORLD EVIDENCE (OpenFDA):\n{live_data_str}"
+            # Secondary Identity Filtering for absolute accuracy
+            da, db = drug_a.lower(), drug_b.lower()
+            is_same_drug = (da == db)
             
-    except Exception as e:
-        context_str = "Error extracting semantic context from RAG."
-        logger.error(f"RAG Error: {e}")
+            verified_contexts = []
+            for c in contexts:
+                ctx_text = c['context'].lower()
+                # Strict logic: context must mention both drugs if they are different
+                if not is_same_drug:
+                    if da in ctx_text and db in ctx_text:
+                        verified_contexts.append(c)
+                else:
+                    # If same drug, ensure it's specifically about that drug and not just a random mention
+                    # e.g. "Cocaine overdose" or "Cocaine toxicity"
+                    if da in ctx_text and any(k in ctx_text for k in ["overdose", "toxicity", "lethal", "dosage", "repeated"]):
+                        verified_contexts.append(c)
+            
+            # Async fetch live data simultaneously
+            live_data_str = await fetch_live_fda_data(drug_a, drug_b)
+            
+            if len(verified_contexts) == 0:
+                if is_same_drug:
+                    context_str = f"Clinical warning: Duplicate administration of {drug_a.upper()} detected. High risk of acute toxicity and pharmacological overdose."
+                else:
+                    context_str = "No specific known interactions found in the medical database for this pair."
+            else:
+                # Format and summarize context
+                context_str = ""
+                for c in verified_contexts:
+                    # Extract the core interaction message, stripping out internal markers
+                    txt = c['context']
+                    if "Interaction:" in txt:
+                        # Clean the context: Only keep the interaction description, discard the drug headers
+                        txt = txt.split("Interaction:", 1)[1].strip()
+                    context_str += f"- {txt}\n"
+                
+            if live_data_str:
+                context_str += f"\n\nREAL-WORLD EVIDENCE (OpenFDA):\n{live_data_str}"
+                
+        except Exception as e:
+            context_str = "Error extracting semantic context from RAG."
+            logger.error(f"RAG Error: {e}")
+    
     rag_latency = time.time() - rag_start
+    RAG_RETRIEVAL_LATENCY.observe(rag_latency)
 
     system_role = "You are a Senior Clinical Pharmacologist and Medical AI Assistant."
     
@@ -369,8 +403,13 @@ async def kafka_worker():
                 final_confidence = confidence
                 
                 try:
+                    explain_start = time.time()
+                    GENAI_REQUEST_COUNT.labels(provider="kafka", status="processing").inc()
+                    
                     # RAG Context with Strict Filtering
+                    rag_start = time.time()
                     contexts = rag.get_relevant_context(drug_a, drug_b, top_k=3) if rag else []
+                    RAG_RETRIEVAL_LATENCY.observe(time.time() - rag_start)
                     
                     verified_contexts = []
                     da, db = drug_a.lower(), drug_b.lower()
@@ -409,6 +448,12 @@ Your explanation MUST be specific to these two drugs.
 
 ### CLINICAL EVIDENCE (RAG CONTEXT):
 {context_str}
+
+### SYNTHESIS INSTRUCTIONS:
+- Use the provided RAG Context to explain the interaction.
+- If the RAG Context only mentions one of the drugs (Soft Match), use your general medical knowledge to explain how it interacts with the other drug in that specific context.
+- Provide a DETAILED, accurate explanation of the mechanism.
+- Avoid generic warnings. Be specific to the pharmacology of {drug_a} and {drug_b}.
 
 ### SEVERITY VERIFICATION:
 If the Predicted Severity '{severity}' is medically incorrect, you MUST start your response with exactly:
@@ -478,6 +523,7 @@ Followed by a newline.
                     }
                     
                     await producer.send_and_wait(RESULT_TOPIC, json.dumps(result_payload).encode())
+                    GENAI_EXPLAIN_LATENCY.observe(time.time() - explain_start)
                     logger.info(f"PUSHED RESULT FOR {req_id}")
                     
                 except Exception as inner_e:
@@ -500,6 +546,8 @@ async def startup_event():
         DB_PATH = "/app/data/vector_db"
         logger.info("Initializing RAG System...")
         rag = DrugInteractionRAG(data_path=DATA_PATH, db_path=DB_PATH)
+        # Increase sample size for better coverage
+        rag.build_database(sample_size=20000)
     except Exception as e:
         logger.error(f"RAG INITIALIZATION FAILED: {e}")
         

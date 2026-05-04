@@ -10,3 +10,4 @@ transformers
 accelerate
 aiokafka
 datasets
+prometheus-client

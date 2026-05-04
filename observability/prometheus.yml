@@ -10,3 +10,11 @@ scrape_configs:
   - job_name: 'consumer-service'
     static_configs:
       - targets: ['consumer-service:8001']
+
+  - job_name: 'ml-service'
+    static_configs:
+      - targets: ['ml_service:8080']
+
+  - job_name: 'genai-service'
+    static_configs:
+      - targets: ['genai_service:8080']

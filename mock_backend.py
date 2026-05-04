@@ -4,6 +4,11 @@ from fastapi.responses import StreamingResponse
 import json
 import asyncio
 
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
 app.add_middleware(
@@ -40,6 +45,7 @@ async def analyse(request: Request):
     data = await request.json()
     drug_a = data.get("drug_a")
     drug_b = data.get("drug_b")
+    logger.info(f"MOCK ANALYSE REQUEST: {drug_a} + {drug_b}")
     
     async def generate():
         expert_data = get_expert_clinical_data(drug_a, drug_b)

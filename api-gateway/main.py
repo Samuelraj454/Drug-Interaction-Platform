@@ -35,17 +35,28 @@ class KafkaManager:
         self.pending_requests = {} # {request_id: asyncio.Future}
 
     async def start(self):
-        self.producer = AIOKafkaProducer(bootstrap_servers=KAFKA_SERVER)
-        await self.producer.start()
-        
-        self.consumer = AIOKafkaConsumer(
-            RESULT_TOPIC,
-            bootstrap_servers=KAFKA_SERVER,
-            group_id="api-gateway-group",
-            auto_offset_reset="latest"
-        )
-        await self.consumer.start()
-        asyncio.create_task(self.listen_for_results())
+        retries = 5
+        while retries > 0:
+            try:
+                self.producer = AIOKafkaProducer(bootstrap_servers=KAFKA_SERVER)
+                await self.producer.start()
+                
+                self.consumer = AIOKafkaConsumer(
+                    RESULT_TOPIC,
+                    bootstrap_servers=KAFKA_SERVER,
+                    group_id="api-gateway-group",
+                    auto_offset_reset="latest"
+                )
+                await self.consumer.start()
+                asyncio.create_task(self.listen_for_results())
+                logger.info("KAFKA MANAGER INITIALIZED AND LISTENING")
+                break
+            except Exception as e:
+                logger.warning(f"Kafka connection failed, retrying... ({retries} left). Error: {e}")
+                retries -= 1
+                await asyncio.sleep(5)
+        if retries == 0:
+            logger.error("KAFKA MANAGER FAILED TO INITIALIZE. Falling back to HTTP mode only.")
         logger.info("KAFKA MANAGER INITIALIZED AND LISTENING")
 
     async def stop(self):
@@ -362,6 +373,7 @@ async def analyse_drug_interaction(request: AnalyzeRequest):
             # Metrics for cache hits
             API_REQUEST_SUCCESS.inc()
             SEVERITY_TOTAL.labels(level=cached_data['severity']).inc()
+            API_REQUEST_LATENCY.observe(time.time() - start_time)
             
             return StreamingResponse(cache_gen(), media_type="text/event-stream")
 

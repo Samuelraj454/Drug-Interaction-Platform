@@ -92,40 +92,39 @@ class DrugInteractionRAG:
         unique_contexts = []
         seen = set()
         
-        print(f"[RAG] Found {len(returned_docs)} potential matches.")
-        
+        # First Pass: Hard Match (Both drugs must match)
         for doc, meta, dist in zip(returned_docs, returned_metas, returned_distances):
             if doc not in seen:
-                seen.add(doc)
-                
-                # IDENTITY CHECK: Ensure at least one of the input drugs matches the metadata
-                # This prevents "Hallucinating" different drugs in the explanation
                 meta_a = str(meta.get("drug_a", "")).lower()
                 meta_b = str(meta.get("drug_b", "")).lower()
                 
-                # We expect either (A==metaA AND B==metaB) OR (A==metaB AND B==metaA)
-                if drug_a == drug_b:
-                    # If same drug, both meta_a and meta_b must be that drug (self-interaction)
-                    is_identity_match = (meta_a == drug_a and meta_b == drug_a)
-                else:
-                    # If different drugs, both must be present in the metadata
-                    is_identity_match = (drug_a in [meta_a, meta_b]) and (drug_b in [meta_a, meta_b])
-                
-                # RELEVANCE CHECK
-                is_relevant = dist < threshold and is_identity_match
-                status = "✅ RELEVANT" if is_relevant else ("❌ IDENTITY MISMATCH" if not is_identity_match else "❌ TOO DISTANT")
-                
-                print(f"  - [{status}] Dist: {round(dist, 4)} | Doc: {doc[:100]}...")
-                
-                if is_relevant:
+                is_hard_match = (drug_a in [meta_a, meta_b]) and (drug_b in [meta_a, meta_b])
+                if is_hard_match and dist < threshold:
+                    seen.add(doc)
                     unique_contexts.append({
                         "context": doc,
-                        "drug_a": meta_a,
-                        "drug_b": meta_b,
+                        "match_type": "hard",
                         "distance_score": round(dist, 4)
                     })
+
+        # Second Pass: Soft Match (At least one drug matches) if we have very few contexts
+        if len(unique_contexts) < 2:
+            for doc, meta, dist in zip(returned_docs, returned_metas, returned_distances):
+                if doc not in seen:
+                    meta_a = str(meta.get("drug_a", "")).lower()
+                    meta_b = str(meta.get("drug_b", "")).lower()
+                    
+                    is_soft_match = (drug_a in [meta_a, meta_b]) or (drug_b in [meta_a, meta_b])
+                    # Stricter threshold for soft matches to ensure high relevance
+                    if is_soft_match and dist < (threshold * 0.8):
+                        seen.add(doc)
+                        unique_contexts.append({
+                            "context": doc,
+                            "match_type": "soft",
+                            "distance_score": round(dist, 4)
+                        })
         
-        print(f"[RAG] Final context count after thresholding: {len(unique_contexts)}")
+        print(f"[RAG] Final context count: {len(unique_contexts)}")
         return unique_contexts
 
 if __name__ == "__main__":
