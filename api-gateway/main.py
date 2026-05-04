@@ -99,10 +99,8 @@ async def startup_event():
     await kafka_mgr.start()
     await init_db()
     try:
-        # Check both local and docker paths
-        data_path = "d:/drug-interaction-platform/data/drug_names.csv"
-        if not os.path.exists(data_path):
-             data_path = "/app/data/drug_names.csv"
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_path = os.path.join(base_dir, "data", "drug_names.csv")
              
         if os.path.exists(data_path):
             import pandas as pd
@@ -182,7 +180,8 @@ async def get_metrics_summary():
         return {"error": str(e)}
 
 # --- Persistence Layer ---
-DB_PATH = "/app/data/history.db"
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.getenv("DB_PATH", os.path.join(base_dir, "data", "history.db"))
 
 async def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
