@@ -1,0 +1,4 @@
+{
+    "css.lint.unknownAtRules": "ignore",
+    "markdown.validate.enabled": false
+}

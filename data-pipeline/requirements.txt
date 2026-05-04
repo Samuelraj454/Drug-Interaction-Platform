@@ -1,0 +1,7 @@
+pandas
+redis
+requests
+numpy
+joblib
+prometheus_client
+confluent-kafka

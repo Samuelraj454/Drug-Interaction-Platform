@@ -1,0 +1,139 @@
+services:
+  # 1. API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ML_SERVICE_URL=http://ml_service:8080
+      - GENAI_SERVICE_URL=http://genai_service:8080
+    depends_on:
+      - ml_service
+      - genai_service
+    volumes:
+      - ./data:/app/data
+
+  # 2. Frontend User Interface (Day 8 & 9)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
+    environment:
+      - VITE_API_URL=http://localhost:8000
+
+  # 3. Data Pipeline - Consumer (Main Processing)
+  consumer-service:
+    build:
+      context: ./data-pipeline
+      dockerfile: Dockerfile
+    command: ["python", "feature_engineering_consumer.py"]
+    ports:
+      - "8002:8001"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - REDIS_HOST=redis
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - kafka
+      - redis
+
+  # 4. Data Pipeline - OpenFDA Producer
+  fda-producer:
+    build:
+      context: ./data-pipeline
+      dockerfile: Dockerfile
+    command: ["python", "openfda_producer.py"]
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+
+  # 5. Data Pipeline - PubMed Producer
+  pubmed-producer:
+    build:
+      context: ./data-pipeline
+      dockerfile: Dockerfile
+    command: ["python", "pubmed_producer.py"]
+    environment:
+      - REDIS_HOST=redis
+    depends_on:
+      - redis
+
+  # 4. Machine Learning Service (Day 6 & 13)
+  ml_service:
+    build:
+      context: ./ml_service
+      dockerfile: Dockerfile
+    expose:
+      - "8080"
+    volumes:
+      - ./data:/app/data
+
+  # 5. Generative AI Service (Day 6 & 13)
+  genai_service:
+    build:
+      context: ./genai_service
+      dockerfile: Dockerfile
+    expose:
+      - "8080"
+    volumes:
+      - ./data:/app/data
+
+  # 6. Redis Message Broker
+  redis:
+    image: "redis:7.2-alpine"
+    ports:
+      - "6379:6379"
+    restart: always
+
+  # 7. Observability - Prometheus (Day 10)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  # 8. Observability - Grafana (Day 10)
+  grafana:
+    image: grafana/grafana-oss:10.2.3
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    restart: always
+    depends_on:
+      - prometheus
+    volumes:
+      - ./observability/provisioning:/etc/grafana/provisioning
+      - ./observability/dashboards:/etc/grafana/dashboards
+
+  # 9. Kafka & Zookeeper (Modern Event Broker)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9094:9094"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1

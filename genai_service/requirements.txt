@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+openai
+google-generativeai
+langchain
+chromadb
+sentence-transformers
+pydantic
+python-dotenv
+pandas
+aiokafka
+httpx

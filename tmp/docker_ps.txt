@@ -1,0 +1,6 @@
+CONTAINER ID   IMAGE                                     COMMAND                  CREATED             STATUS             PORTS                                         NAMES
+0bd877e1ec48   drug-interaction-platform-frontend        "/docker-entrypoint.???"   About an hour ago   Up About an hour   0.0.0.0:3000->80/tcp, [::]:3000->80/tcp       drug-interaction-platform-frontend-1
+cab79b78f2c6   drug-interaction-platform-api-gateway     "uvicorn main:app --???"   About an hour ago   Up About an hour   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp   drug-interaction-platform-api-gateway-1
+625ed1bb6e00   drug-interaction-platform-genai_service   "uvicorn app:app --h???"   About an hour ago   Up About an hour   8080/tcp                                      drug-interaction-platform-genai_service-1
+e6297f5a4bff   drug-interaction-platform-ml_service      "uvicorn app:app --h???"   About an hour ago   Up About an hour   8080/tcp                                      drug-interaction-platform-ml_service-1
+57b1f9c0ed49   prom/prometheus:latest                    "/bin/prometheus --c???"   16 hours ago        Up 3 hours         0.0.0.0:9090->9090/tcp, [::]:9090->9090/tcp   drug-interaction-platform-prometheus-1
