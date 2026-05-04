@@ -35,7 +35,12 @@ class KafkaManager:
         self.pending_requests = {} # {request_id: asyncio.Future}
 
     async def start(self):
-        retries = 5
+        # Optional kill switch for Render deployments without Kafka
+        if os.getenv("DISABLE_KAFKA", "false").lower() == "true":
+            logger.warning("KAFKA DISABLED VIA ENV. Falling back to HTTP mode only.")
+            return
+            
+        retries = 2
         while retries > 0:
             try:
                 self.producer = AIOKafkaProducer(bootstrap_servers=KAFKA_SERVER)
@@ -50,14 +55,18 @@ class KafkaManager:
                 await self.consumer.start()
                 asyncio.create_task(self.listen_for_results())
                 logger.info("KAFKA MANAGER INITIALIZED AND LISTENING")
-                break
+                return
             except Exception as e:
                 logger.warning(f"Kafka connection failed, retrying... ({retries} left). Error: {e}")
+                if self.producer:
+                    try: await self.producer.stop()
+                    except: pass
+                    self.producer = None
                 retries -= 1
-                await asyncio.sleep(5)
-        if retries == 0:
-            logger.error("KAFKA MANAGER FAILED TO INITIALIZE. Falling back to HTTP mode only.")
-        logger.info("KAFKA MANAGER INITIALIZED AND LISTENING")
+                if retries > 0:
+                    await asyncio.sleep(2)
+                    
+        logger.error("KAFKA MANAGER FAILED TO INITIALIZE. Falling back to HTTP mode only.")
 
     async def stop(self):
         if self.producer: await self.producer.stop()
