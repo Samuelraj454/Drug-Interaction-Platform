@@ -542,8 +542,9 @@ Followed by a newline.
 async def startup_event():
     global rag
     try:
-        DATA_PATH = "/app/data/cleaned_data.csv"
-        DB_PATH = "/app/data/vector_db"
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        DATA_PATH = os.path.join(base_dir, "data", "cleaned_data.csv")
+        DB_PATH = os.path.join(base_dir, "data", "vector_db")
         logger.info("Initializing RAG System...")
         rag = DrugInteractionRAG(data_path=DATA_PATH, db_path=DB_PATH)
         # Increase sample size for better coverage
